@@ -59,6 +59,7 @@ void Power::getSupportedPlatform() {
 }
 
 static void sysfs_write(const char *path, const char *s) {
+    return;
     if (access(path, F_OK) < 0) return;
     char buf[80];
     int len;
