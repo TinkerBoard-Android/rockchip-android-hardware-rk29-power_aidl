@@ -3,7 +3,7 @@
  */
 
 #include "Power.h"
-
+#include "PowerHintSession.h"
 #include <aidl/android/hardware/power/Boost.h>
 #define LOG_TAG "PowerAIDL"
 
@@ -36,6 +36,9 @@ namespace hardware {
 namespace power {
 namespace impl {
 namespace rockchip {
+
+using namespace std::chrono_literals;
+using ndk::ScopedAStatus;
 
 #define PW_LOG_DEBUG(...) if (DEBUG_EN) ALOGD(__VA_ARGS__)
 
@@ -236,7 +239,7 @@ void Power::getSupportedPlatform() {
     initPlatform();
 }
 
-ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
+ScopedAStatus Power::setMode(Mode type, bool enabled) {
     PW_LOG_DEBUG("Power setMode: %d to: %s", static_cast<int32_t>(type), (enabled?"on":"off"));
     getSupportedPlatform();
     switch (type) {
@@ -280,13 +283,17 @@ ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
         break;
         case Mode::CAMERA_STREAMING_HIGH:
         break;
+        case Mode::GAME:
+        break;
+        case Mode::GAME_LOADING:
+        break;
         default:
         break;
     }
-    return ndk::ScopedAStatus::ok();
+    return ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Power::setBoost(Boost type, int32_t durationMs) {
+ScopedAStatus Power::setBoost(Boost type, int32_t durationMs) {
     PW_LOG_DEBUG("Power setBoost: %d, duration: %d", static_cast<int32_t>(type), durationMs);
     getSupportedPlatform();
     switch (type) {
@@ -300,16 +307,17 @@ ndk::ScopedAStatus Power::setBoost(Boost type, int32_t durationMs) {
         default:
         break;
     }
-    return ndk::ScopedAStatus::ok();
+    return ScopedAStatus::ok();
 }
 
 /**
  * _PLACEHOLDER_,           DOUBLE_TAP_TO_WAKE,     LOW_POWER,              SUSTAINED_PERFORMANCE,
  * FIXED_PERFORMANCE,       VR,                     LAUNCH,                 EXPENSIVE_RENDERING,
  * INTERACTIVE,             DEVICE_IDLE,            DISPLAY_INACTIVE,       AUDIO_STREAMING_LOW_LATENCY,
- * CAMERA_STREAMING_SECURE, CAMERA_STREAMING_LOW,   CAMERA_STREAMING_MID,   CAMERA_STREAMING_HIGH
+ * CAMERA_STREAMING_SECURE, CAMERA_STREAMING_LOW,   CAMERA_STREAMING_MID,   CAMERA_STREAMING_HIGH,
+ * GAME,                    GAME_LOADING
  */
-ndk::ScopedAStatus Power::isModeSupported(Mode type, bool* _aidl_return) {
+ScopedAStatus Power::isModeSupported(Mode type, bool* _aidl_return) {
     PW_LOG_DEBUG("Power isModeSupported: %d", static_cast<int32_t>(type));
     getSupportedPlatform();
     switch (type) {
@@ -362,7 +370,7 @@ ndk::ScopedAStatus Power::isModeSupported(Mode type, bool* _aidl_return) {
             *_aidl_return = false;
         break;
     }
-    return ndk::ScopedAStatus::ok();
+    return ScopedAStatus::ok();
 }
 
 /**
@@ -376,7 +384,7 @@ ndk::ScopedAStatus Power::isModeSupported(Mode type, bool* _aidl_return) {
  * rk3326 : 0x003F
  * ...
  */
-ndk::ScopedAStatus Power::isBoostSupported(Boost type, bool* _aidl_return) {
+ScopedAStatus Power::isBoostSupported(Boost type, bool* _aidl_return) {
     PW_LOG_DEBUG("Power isBoostSupported: %d", static_cast<int32_t>(type));
     getSupportedPlatform();
     switch (type) {
@@ -405,18 +413,25 @@ ndk::ScopedAStatus Power::isBoostSupported(Boost type, bool* _aidl_return) {
             *_aidl_return = false;
         break;
     }
-    return ndk::ScopedAStatus::ok();
+    return ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Power::createHintSession(int32_t, int32_t, const std::vector<int32_t>&, int64_t,
-                                            std::shared_ptr<IPowerHintSession>* _aidl_return) {
-    *_aidl_return = nullptr;
-    return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ScopedAStatus Power::createHintSession(int32_t, int32_t, const std::vector<int32_t>& tids, int64_t,
+                                       std::shared_ptr<IPowerHintSession>* _aidl_return) {
+    if (tids.size() == 0) {
+        *_aidl_return = nullptr;
+        return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+    std::shared_ptr<IPowerHintSession> powerHintSession =
+            ndk::SharedRefBase::make<PowerHintSession>();
+    mPowerHintSessions.push_back(powerHintSession);
+    *_aidl_return = powerHintSession;
+    return ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Power::getHintSessionPreferredRate(int64_t* outNanoseconds) {
-    *outNanoseconds = -1;
-    return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ScopedAStatus Power::getHintSessionPreferredRate(int64_t* outNanoseconds) {
+    *outNanoseconds = std::chrono::nanoseconds(1ms).count();
+    return ScopedAStatus::ok();
 }
 
 void Power::performanceBoost(bool on) {

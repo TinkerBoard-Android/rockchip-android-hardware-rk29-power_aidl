@@ -12,11 +12,12 @@ cc_binary {
         "libcutils",
         "liblog",
         "libbinder_ndk",
-        "android.hardware.power-V2-ndk",
+        "android.hardware.power-V4-ndk",
     ],
     srcs: [
         "main.cpp",
         "Power.cpp",
+        "PowerHintSession.cpp",
     ],
     cflags: [
         "-Wno-error",

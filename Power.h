@@ -48,6 +48,7 @@ private:
 };
 
 class Power : public BnPower {
+  public:
     ndk::ScopedAStatus setMode(Mode type, bool enabled) override;
     ndk::ScopedAStatus isModeSupported(Mode type, bool* _aidl_return) override;
     ndk::ScopedAStatus setBoost(Boost type, int32_t durationMs) override;
@@ -58,11 +59,12 @@ class Power : public BnPower {
                                          std::shared_ptr<IPowerHintSession>* _aidl_return) override;
     ndk::ScopedAStatus getHintSessionPreferredRate(int64_t* outNanoseconds) override;
 
-private:
+  private:
     int64_t _boost_support_int = -1;
     int64_t _mode_support_int = -1;
     int8_t _boot_complete = -1;
     std::vector<ClusterInfo> clusterList;
+    std::vector<std::shared_ptr<IPowerHintSession>> mPowerHintSessions;
 
     void getSupportedPlatform();
     void initPlatform();
