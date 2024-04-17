@@ -19,14 +19,16 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
-#define DEBUG_EN 0
 
 #define BUFFER_LENGTH 64
 #define DEV_FREQ_PATH "/sys/class/devfreq"
 #define CPU_CLUST_INFO_PATH "/sys/devices/system/cpu/cpufreq"
 
+#define VERSION "version 13.0, add support for UFS/VOP"
+
 static int is_inited = 0;
 static int is_performance = 0;
+static bool kDebug = false;
 
 using ::android::base::StringPrintf;
 
@@ -40,9 +42,9 @@ namespace rockchip {
 using namespace std::chrono_literals;
 using ndk::ScopedAStatus;
 
-#define PW_LOG_DEBUG(...) if (DEBUG_EN) ALOGD(__VA_ARGS__)
+#define PW_LOG_DEBUG(...) if (kDebug) ALOGD(__VA_ARGS__)
 
-void sysfs_read(std::string path, std::string *buf) {
+static void sysfs_read(const std::string& path, std::string *buf) {
     if (!::android::base::ReadFileToString(path, buf)) {
         ALOGE("Error to open %s", path.c_str());
         std::string realpath;
@@ -95,6 +97,10 @@ ClusterInfo::ClusterInfo(const ClusterType type, const std::string& clust) : _ty
             maxPath = StringPrintf("%s/%s/cpuinfo_max_freq",
                                    CPU_CLUST_INFO_PATH, clust.c_str());
             break;
+        case ClusterType::UFS:
+            [[fallthrough]];
+        case ClusterType::VOP:
+            [[fallthrough]];
         case ClusterType::GPU:
             _minFreqPath = StringPrintf("%s/min_freq", clust.c_str());
             _maxFreqPath = StringPrintf("%s/max_freq", clust.c_str());
@@ -119,7 +125,7 @@ ClusterInfo::ClusterInfo(const ClusterType type, const std::string& clust) : _ty
     sysfs_read(minPath, &_minFreq);
     sysfs_read(maxPath, &_maxFreq);
     sysfs_read(_govPath, &_govDefault);
-    ALOGI("Registered: %s", toString().c_str());
+    ALOGI("Registered %s as %s", clust.c_str(), toString().c_str());
 }
 
 std::string ClusterInfo::toString() {
@@ -133,6 +139,12 @@ std::string ClusterInfo::toString() {
             break;
         case ClusterType::DDR:
             type = "DDR";
+            break;
+        case ClusterType::VOP:
+            type = "VOP";
+            break;
+        case ClusterType::UFS:
+            type = "UFS";
             break;
         default:
             type = "unknown";
@@ -166,8 +178,13 @@ void ClusterInfo::setPowerSave(bool on) {
     switch (getType()) {
         case ClusterType::CPU:
             [[fallthrough]];
+        case ClusterType::VOP:
+            [[fallthrough]];
+        case ClusterType::UFS:
+            [[fallthrough]];
         case ClusterType::GPU:
             setGov(on ? "powersave" : _govDefault);
+            break;
         case ClusterType::DDR:
             setGov(on ? "l" : "L");
             break;
@@ -190,7 +207,7 @@ void Power::initPlatform() {
 
     if (is_inited || (_boot_complete <= 0)) return;
 
-    ALOGI("version 12.0\n");
+    ALOGI(VERSION);
     auto findWithPath = [&](const char *path, ClusterType type) {
         std::unique_ptr<DIR, decltype(&closedir)>dir(opendir(path), closedir);
         if (!dir) return;
@@ -205,6 +222,22 @@ void Power::initPlatform() {
                     clusterList.push_back(gpu);
                     break;
                 }
+            } else if (type == ClusterType::VOP) {
+                name = dp->d_name;
+                if (strstr(name.c_str(), "vop") != NULL) {
+                    ClusterInfo vop = ClusterInfo(ClusterType::VOP,
+                                                  StringPrintf("%s/%s", DEV_FREQ_PATH, dp->d_name));
+                    clusterList.push_back(vop);
+                    break;
+                }
+            } else if (type == ClusterType::UFS) {
+                name = dp->d_name;
+                if (strstr(name.c_str(), "ufs") != NULL) {
+                    ClusterInfo ufs = ClusterInfo(ClusterType::UFS,
+                                                  StringPrintf("%s/%s", DEV_FREQ_PATH, dp->d_name));
+                    clusterList.push_back(ufs);
+                    break;
+                }
             } else if (type == ClusterType::CPU) {
                 if (dp->d_name[0] == '.') {
                     continue;
@@ -217,6 +250,8 @@ void Power::initPlatform() {
 
     findWithPath(CPU_CLUST_INFO_PATH, ClusterType::CPU);
     findWithPath(DEV_FREQ_PATH, ClusterType::GPU);
+    findWithPath(DEV_FREQ_PATH, ClusterType::VOP);
+    findWithPath(DEV_FREQ_PATH, ClusterType::UFS);
 
     ClusterInfo ddr = ClusterInfo(ClusterType::DDR, "/sys/class/devfreq/dmc");
     clusterList.push_back(ddr);
@@ -240,7 +275,7 @@ void Power::getSupportedPlatform() {
 }
 
 ScopedAStatus Power::setMode(Mode type, bool enabled) {
-    PW_LOG_DEBUG("Power setMode: %d to: %s", static_cast<int32_t>(type), (enabled?"on":"off"));
+    PW_LOG_DEBUG("Power setMode: %s to: %s", toString(type).c_str(), (enabled?"on":"off"));
     getSupportedPlatform();
     switch (type) {
         case Mode::DOUBLE_TAP_TO_WAKE:
@@ -294,7 +329,7 @@ ScopedAStatus Power::setMode(Mode type, bool enabled) {
 }
 
 ScopedAStatus Power::setBoost(Boost type, int32_t durationMs) {
-    PW_LOG_DEBUG("Power setBoost: %d, duration: %d", static_cast<int32_t>(type), durationMs);
+    PW_LOG_DEBUG("Power setBoost: %s, duration: %d", toString(type).c_str(), durationMs);
     getSupportedPlatform();
     switch (type) {
         // Touch screen
@@ -467,6 +502,22 @@ void Power::interactive() {
     for (auto cluster : clusterList) {
         cluster.setInteractive();
     }
+}
+
+binder_status_t Power::dump(int fd, const char **args, uint32_t argc) {
+    kDebug = (argc == 1) && (std::string(args[0]) == "debug");
+
+    ::android::base::WriteStringToFd("Power aidl dump:\n", fd);
+    ::android::base::WriteStringToFd(::android::base::StringPrintf("Version: %s\n", VERSION), fd);
+    ::android::base::WriteStringToFd(::android::base::StringPrintf("DEBUG: %s\n", (kDebug?"ON":"OFF")), fd);
+    ::android::base::WriteStringToFd(::android::base::StringPrintf("Performance: %s\n", (is_performance?"ON":"OFF")), fd);
+    for (auto cluster : clusterList) {
+        ::android::base::WriteStringToFd("*************************\n", fd);
+        ::android::base::WriteStringToFd(cluster.toString(), fd);
+        ::android::base::WriteStringToFd("*************************\n", fd);
+    }
+
+    return STATUS_OK;
 }
 
 }  // namespace rockchip

@@ -21,6 +21,8 @@ enum class ClusterType {
     GPU,
     DDR,
     NPU,
+    VOP,
+    UFS,
 };
 
 class ClusterInfo {
@@ -58,6 +60,7 @@ class Power : public BnPower {
                                          int64_t durationNanos,
                                          std::shared_ptr<IPowerHintSession>* _aidl_return) override;
     ndk::ScopedAStatus getHintSessionPreferredRate(int64_t* outNanoseconds) override;
+    binder_status_t dump(int fd, const char **args, unsigned int numArgs) override;
 
   private:
     int64_t _boost_support_int = -1;
