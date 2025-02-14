@@ -77,7 +77,7 @@ static void sysfs_write(const char *path, const char *s) {
     close(fd);
 }
 
-ClusterInfo::ClusterInfo(const ClusterType type, const std::string& clust) : _type(type) {
+ClusterInfo::ClusterInfo(const ClusterType type, const std::string& clust) : _type(type), _clust(clust) {
     std::string minPath, maxPath;
     switch (type) {
         case ClusterType::CPU:
@@ -148,10 +148,42 @@ void ClusterInfo::setMaxFreq(const std::string& freq) {
 }
 
 void ClusterInfo::setPerformance(bool on) {
-    if (on) {
-        setMinFreq(_maxFreq);
+    if (_type == ClusterType::CPU) {
+        std::string maxFreqProp = StringPrintf("persist.cpu.%s.maxfreq", _clust.c_str());
+        std::string minFreqProp = StringPrintf("persist.cpu.%s.minfreq", _clust.c_str());
+        if (on) {
+            char maxFreqStr[PROP_VALUE_MAX];
+            if (property_get(maxFreqProp.c_str(), maxFreqStr, NULL) > 0 && strlen(maxFreqStr) > 0)
+                setMinFreq(maxFreqStr);
+            else
+                setMinFreq(_maxFreq);
+        } else {
+            char minFreqStr[PROP_VALUE_MAX];
+            if (property_get(minFreqProp.c_str(), minFreqStr, NULL) > 0 && strlen(minFreqStr) > 0)
+                setMinFreq(minFreqStr);
+            else
+                setMinFreq(_minFreq);
+        }
+    } else if (_type == ClusterType::GPU) {
+        if (on) {
+            char maxFreqStr[PROP_VALUE_MAX];
+            if (property_get("persist.gpu.maxfreq", maxFreqStr, NULL) > 0 && strlen(maxFreqStr) > 0)
+                setMinFreq(maxFreqStr);
+            else
+                setMinFreq(_maxFreq);
+        } else {
+            char minFreqStr[PROP_VALUE_MAX];
+            if (property_get("persist.gpu.minfreq", minFreqStr, NULL) > 0 && strlen(minFreqStr) > 0)
+                setMinFreq(minFreqStr);
+            else
+                setMinFreq(_minFreq);
+        }
     } else {
-        setMinFreq(_minFreq);
+        if (on) {
+            setMinFreq(_maxFreq);
+        } else {
+            setMinFreq(_minFreq);
+        }
     }
 }
 
