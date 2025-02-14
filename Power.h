@@ -41,6 +41,7 @@ public:
     }
 private:
     ClusterType _type;
+    std::string _clust;
     std::string _minFreqPath;
     std::string _maxFreqPath;
     std::string _govPath;
