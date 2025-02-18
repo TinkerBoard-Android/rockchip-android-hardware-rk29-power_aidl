@@ -179,6 +179,20 @@ void ClusterInfo::setPerformance(bool on) {
             else
                 setMinFreq(_minFreq);
         }
+    } else if (_type == ClusterType::GPU) {
+        if (on) {
+            char maxFreqStr[PROP_VALUE_MAX];
+            if (property_get("persist.gpu.maxfreq", maxFreqStr, NULL) > 0 && strlen(maxFreqStr) > 0)
+                setMinFreq(maxFreqStr);
+            else
+                setMinFreq(_maxFreq);
+        } else {
+            char minFreqStr[PROP_VALUE_MAX];
+            if (property_get("persist.gpu.minfreq", minFreqStr, NULL) > 0 && strlen(minFreqStr) > 0)
+                setMinFreq(minFreqStr);
+            else
+                setMinFreq(_minFreq);
+        }
     } else {
         if (on) {
             setMinFreq(_maxFreq);
